@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카페인 & 심박동 시뮬레이터</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap');
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        /* 심장 박동 애니메이션 키프레임 */
+        @keyframes heartbeat {
+            0% { transform: scale(1); }
+            15% { transform: scale(1.15); }
+            30% { transform: scale(1); }
+            45% { transform: scale(1.15); }
+            60% { transform: scale(1); }
+            100% { transform: scale(1); }
+        }
+
+        .heart {
+            color: #ef4444;
+            font-size: 6rem;
+            display: inline-block;
+            animation: heartbeat 1s infinite ease-in-out; 
+            text-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.5);
+        }
+
+        /* 탭 전환 시 부드러운 효과 */
+        .page-transition {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .hidden-page {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+            transform: translateY(10px);
+            visibility: hidden;
+        }
+        .active-page {
+            opacity: 1;
+            pointer-events: auto;
+            position: relative;
+            transform: translateY(0);
+            visibility: visible;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4 sm:p-8">
+
+    <div class="w-full max-w-5xl bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col relative">
+        
+        <!-- 헤더 및 탭 네비게이션 -->
+        <header class="bg-indigo-600">
+            <div class="p-6 text-white text-center">
+                <h1 class="text-3xl font-bold">🫀 카페인 & 심박동 시뮬레이터</h1>
+                <p class="mt-2 text-indigo-200 text-sm sm:text-base">나의 체질과 마시는 음료에 따라 내 심장은 어떻게 뛸까?</p>
+            </div>
+            <!-- 탭 버튼 -->
+            <div class="flex justify-center bg-indigo-700">
+                <button id="tabSimBtn" onclick="switchTab('sim')" class="flex-1 py-3 font-semibold text-white bg-indigo-800 border-b-4 border-yellow-400 transition">
+                    1. 시뮬레이션
+                </button>
+                <button id="tabReportBtn" onclick="switchTab('report')" class="flex-1 py-3 font-semibold text-indigo-200 hover:text-white transition">
+                    2. 탐구 보고서 작성
+                </button>
+            </div>
+        </header>
+
+        <!-- 메인 컨텐츠 영역 -->
+        <main class="relative h-[650px] overflow-y-auto">
+            
+            <!-- [페이지 1] 시뮬레이션 -->
+            <div id="pageSim" class="p-6 sm:p-8 grid grid-cols-1 md:grid-cols-3 gap-8 active-page page-transition w-full h-full absolute top-0 left-0">
+                
+                <!-- 좌측: 컨트롤 패널 -->
+                <div class="md:col-span-1 space-y-6">
+                    <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                        <label class="block text-sm font-bold text-gray-700 mb-3">🥤 1. 음료 선택</label>
+                        <select id="drinkSelect" class="w-full p-3 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition">
+                            <option value="200">메가커피 아메리카노 (카페인 약 200mg)</option>
+                            <option value="100">몬스터 에너지 (카페인 약 100mg)</option>
+                            <option value="60">핫식스 (카페인 약 60mg)</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-gray-50 p-5 rounded-xl border border-gray-100">
+                        <label class="block text-sm font-bold text-gray-700 mb-3">🧬 2. 나의 카페인 체질</label>
+                        <select id="personSelect" class="w-full p-3 border-2 border-gray-200 rounded-lg focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition">
+                            <option value="normal">일반인 (보통)</option>
+                            <option value="sensitive">카페인 민감형 (영향 큼)</option>
+                            <option value="insensitive">카페인 둔감형 (영향 적음)</option>
+                        </select>
+                    </div>
+
+                    <button onclick="runSimulation()" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-indigo-700 transform active:scale-95 transition">
+                        시뮬레이션 시작
+                    </button>
+                </div>
+
+                <!-- 우측: 결과 출력부 (그래프 + 일러스트) -->
+                <div class="md:col-span-2 flex flex-col gap-6">
+                    <!-- 심장 일러스트 및 상태 출력 -->
+                    <div class="flex items-center justify-around bg-red-50 p-6 rounded-2xl border border-red-100 shadow-inner">
+                        <div class="flex flex-col items-center">
+                            <div class="heart" id="heartIcon">❤️</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600 font-bold mb-1">최고 심박수 (예상치)</div>
+                            <div class="text-5xl font-black text-red-600" id="bpmDisplay">70 <span class="text-xl text-red-400 font-semibold">BPM</span></div>
+                            <div id="statusMsg" class="mt-2 text-sm font-medium text-gray-500 bg-white px-3 py-1 rounded-full border shadow-sm">평온한 상태입니다.</div>
+                        </div>
+                    </div>
+
+                    <!-- 차트 영역 -->
+                    <div class="flex-1 w-full bg-white border border-gray-200 rounded-2xl p-4 shadow-sm min-h-[250px]">
+                        <canvas id="heartRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [페이지 2] 학생 보고서 활동 -->
+            <div id="pageReport" class="p-6 sm:p-8 hidden-page page-transition w-full absolute top-0 left-0 bg-white">
+                
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">📝 심박동 탐구 보고서 제출</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    
+                    <!-- 왼쪽 열: 인적사항 및 문제 -->
+                    <div class="space-y-6">
+                        <!-- 인적사항 입력 -->
+                        <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 space-y-4">
+                            <h3 class="font-bold text-gray-700">1. 인적사항</h3>
+                            <div class="flex gap-4">
+                                <!-- 학년 -->
+                                <div class="flex-1">
+                                    <label class="block text-xs text-gray-500 mb-1">학년</label>
+                                    <div class="flex gap-2">
+                                        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="grade" value="1" class="text-indigo-600"> 1학년</label>
+                                        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="grade" value="2" class="text-indigo-600"> 2학년</label>
+                                        <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="grade" value="3" class="text-indigo-600"> 3학년</label>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex gap-4">
+                                <!-- 반 -->
+                                <div class="flex-1">
+                                    <label class="block text-xs text-gray-500 mb-1">반</label>
+                                    <select id="classNum" class="w-full p-2 border rounded outline-none focus:border-indigo-500">
+                                        <option value="">선택</option>
+                                        <!-- 자바스크립트로 1~11 채움 -->
+                                    </select>
+                                </div>
+                                <!-- 번호 -->
+                                <div class="flex-1">
+                                    <label class="block text-xs text-gray-500 mb-1">번호</label>
+                                    <select id="studentNum" class="w-full p-2 border rounded outline-none focus:border-indigo-500">
+                                        <option value="">선택</option>
+                                        <!-- 자바스크립트로 1~25 채움 -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">이름</label>
+                                <input type="text" id="studentName" placeholder="홍길동" class="w-full p-2 border rounded outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <!-- 객관식 문제 -->
+                        <div class="bg-blue-50 p-5 rounded-xl border border-blue-100">
+                            <div class="flex justify-between items-start mb-3">
+                                <h3 class="font-bold text-blue-900">2. 개념 확인 문제</h3>
+                                <span class="bg-blue-200 text-blue-800 text-xs font-bold px-2 py-1 rounded">5점</span>
+                            </div>
+                            <p class="text-sm text-gray-700 mb-3 leading-relaxed">
+                                <strong>Q.</strong> 카페인이 우리 몸에 들어왔을 때 심박수가 증가하는 생리학적 원리로 <strong>가장 적절한 것</strong>은 무엇인가?
+                            </p>
+                            <div class="space-y-2 text-sm text-gray-700">
+                                <label class="flex items-start gap-2 cursor-pointer p-2 hover:bg-blue-100 rounded transition">
+                                    <input type="radio" name="quiz" value="1" class="mt-1">
+                                    <span>① 뇌의 수면 중추를 직접 파괴하여 각성 상태를 유지한다.</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer p-2 hover:bg-blue-100 rounded transition">
+                                    <input type="radio" name="quiz" value="2" class="mt-1">
+                                    <span>② 교감신경의 작용을 억제하여 심장 근육을 이완시킨다.</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer p-2 hover:bg-blue-100 rounded transition">
+                                    <input type="radio" name="quiz" value="3" class="mt-1">
+                                    <span>③ 부교감신경을 흥분시켜 혈압을 낮추고 심박동을 촉진한다.</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer p-2 hover:bg-blue-100 rounded transition">
+                                    <input type="radio" name="quiz" value="4" class="mt-1">
+                                    <span>④ 졸음을 유발하는 아데노신 수용체를 차단하고 교감신경을 활성화시킨다.</span>
+                                </label>
+                                <label class="flex items-start gap-2 cursor-pointer p-2 hover:bg-blue-100 rounded transition">
+                                    <input type="radio" name="quiz" value="5" class="mt-1">
+                                    <span>⑤ 인슐린 분비를 촉진하여 혈당을 급격히 높임으로써 심장을 뛰게 한다.</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 오른쪽 열: 서술형 보고서 및 제출 -->
+                    <div class="flex flex-col h-full">
+                        <div class="bg-yellow-50 p-5 rounded-xl border border-yellow-200 flex-1 flex flex-col">
+                            <h3 class="font-bold text-yellow-900 mb-3">3. 탐구 보고서 작성 (서술형)</h3>
+                            <p class="text-xs text-gray-600 mb-2">
+                                시뮬레이션 탭에서 확인한 결과를 바탕으로, 본인의 체질에서 고카페인 음료를 마셨을 때 나타날 수 있는 신체적 변화와 주의할 점을 3문장 이상으로 서술하시오.
+                            </p>
+                            <textarea id="reportText" class="w-full flex-1 p-3 border border-yellow-300 rounded-lg outline-none focus:ring-2 focus:ring-yellow-500 resize-none text-sm leading-relaxed" placeholder="이곳에 탐구 내용을 작성해주세요..."></textarea>
+                        </div>
+                        
+                        <!-- 제출 버튼 -->
+                        <button id="submitBtn" onclick="submitReport()" class="mt-6 w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-indigo-700 transition flex justify-center items-center gap-2">
+                            <svg id="submitIcon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                            </svg>
+                            <span id="submitBtnText">선생님께 보고서 제출하기</span>
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+        </main>
+        
+        <!-- 커스텀 모달 (제출 완료 / 경고창용) -->
+        <div id="customModal" class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50 rounded-3xl">
+            <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full text-center mx-4 transform scale-95 transition-transform" id="modalContent">
+                <div id="modalIcon" class="text-5xl mb-4">✅</div>
+                <h3 id="modalTitle" class="text-xl font-bold text-gray-800 mb-2">제출 완료</h3>
+                <p id="modalDesc" class="text-gray-600 text-sm mb-6">보고서가 성공적으로 제출되었습니다.</p>
+                <button onclick="closeModal()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 w-full">확인</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let chartInstance = null;
+        const ctx = document.getElementById('heartRateChart').getContext('2d');
+
+        // 드롭다운 옵션 자동 생성 (반, 번호)
+        window.addEventListener('DOMContentLoaded', () => {
+            const classSelect = document.getElementById('classNum');
+            for(let i=1; i<=11; i++) {
+                classSelect.innerHTML += `<option value="${i}">${i}반</option>`;
+            }
+            
+            const studentSelect = document.getElementById('studentNum');
+            for(let i=1; i<=25; i++) {
+                studentSelect.innerHTML += `<option value="${i}">${i}번</option>`;
+            }
+            
+            initChart();
+        });
+
+        // 차트 초기화
+        function initChart() {
+            Chart.defaults.font.family = "'Pretendard', sans-serif";
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['0분(섭취전)', '30분 후', '60분 후', '90분 후', '120분 후', '150분 후'],
+                    datasets: [{
+                        label: '심박수 (BPM)',
+                        data: [70, 70, 70, 70, 70, 70],
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#ef4444',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { 
+                            min: 50, max: 150,
+                            grid: { borderDash: [5, 5] }
+                        },
+                        x: { grid: { display: false } }
+                    },
+                    animation: { duration: 1000, easing: 'easeOutQuart' }
+                }
+            });
+        }
+
+        function runSimulation() {
+            const drinkCaffeine = parseInt(document.getElementById('drinkSelect').value);
+            const personType = document.getElementById('personSelect').value;
+            
+            let baseBpm = 70;
+            let dataPoints = [];
+            const caffeineRatio = drinkCaffeine / 100; 
+
+            // 체질별 BPM 변화 커브 배열
+            if (personType === 'sensitive') {
+                dataPoints = [baseBpm, baseBpm + (25*caffeineRatio), baseBpm + (32*caffeineRatio), baseBpm + (28*caffeineRatio), baseBpm + (22*caffeineRatio), baseBpm + (15*caffeineRatio)];
+            } else if (personType === 'normal') {
+                dataPoints = [baseBpm, baseBpm + (10*caffeineRatio), baseBpm + (15*caffeineRatio), baseBpm + (10*caffeineRatio), baseBpm + (5*caffeineRatio), baseBpm];
+            } else {
+                dataPoints = [baseBpm, baseBpm + (2*caffeineRatio), baseBpm + (4*caffeineRatio), baseBpm + (2*caffeineRatio), baseBpm + (1*caffeineRatio), baseBpm];
+            }
+
+            // 차트 업데이트
+            chartInstance.data.datasets[0].data = dataPoints;
+            chartInstance.update();
+
+            const maxBpm = Math.max(...dataPoints);
+            
+            // 상태 텍스트 분기 처리
+            const statusMsg = document.getElementById('statusMsg');
+            if(maxBpm < 85) {
+                statusMsg.innerText = "😌 안정적입니다.";
+                statusMsg.className = "mt-2 text-sm font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200 shadow-sm";
+            } else if(maxBpm < 110) {
+                statusMsg.innerText = "🏃 가벼운 두근거림 (운동 상태)";
+                statusMsg.className = "mt-2 text-sm font-bold text-yellow-600 bg-yellow-50 px-3 py-1 rounded-full border border-yellow-200 shadow-sm";
+            } else {
+                statusMsg.innerText = "🚨 심박수 매우 높음 (주의 요망)";
+                statusMsg.className = "mt-2 text-sm font-bold text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-200 shadow-sm animate-pulse";
+            }
+
+            // 숫자 애니메이션 및 심장 속도 제어
+            animateValue(document.getElementById('bpmDisplay'), 70, Math.round(maxBpm), 1000);
+            document.getElementById('heartIcon').style.animationDuration = `${60 / maxBpm}s`;
+        }
+
+        // 숫자 카운트업 유틸리티
+        function animateValue(obj, start, end, duration) {
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                obj.innerHTML = `${Math.floor(progress * (end - start) + start)} <span class="text-xl text-red-400 font-semibold">BPM</span>`;
+                if (progress < 1) window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // 탭 전환 로직
+        function switchTab(tabId) {
+            const pageSim = document.getElementById('pageSim');
+            const pageReport = document.getElementById('pageReport');
+            const btnSim = document.getElementById('tabSimBtn');
+            const btnReport = document.getElementById('tabReportBtn');
+
+            if (tabId === 'sim') {
+                pageSim.classList.replace('hidden-page', 'active-page');
+                pageReport.classList.replace('active-page', 'hidden-page');
+                
+                btnSim.className = "flex-1 py-3 font-semibold text-white bg-indigo-800 border-b-4 border-yellow-400 transition";
+                btnReport.className = "flex-1 py-3 font-semibold text-indigo-200 hover:text-white border-b-4 border-transparent transition";
+            } else {
+                pageReport.classList.replace('hidden-page', 'active-page');
+                pageSim.classList.replace('active-page', 'hidden-page');
+                
+                btnReport.className = "flex-1 py-3 font-semibold text-white bg-indigo-800 border-b-4 border-yellow-400 transition";
+                btnSim.className = "flex-1 py-3 font-semibold text-indigo-200 hover:text-white border-b-4 border-transparent transition";
+            }
+        }
+
+        // 모달창 유틸리티 (alert() 대체)
+        const modal = document.getElementById('customModal');
+        const modalContent = document.getElementById('modalContent');
+        
+        function showModal(type, title, desc) {
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalDesc').innerText = desc;
+            
+            if(type === 'error') {
+                document.getElementById('modalIcon').innerText = "⚠️";
+                document.getElementById('modalIcon').className = "text-5xl mb-4 text-red-500";
+            } else {
+                document.getElementById('modalIcon').innerText = "🎉";
+                document.getElementById('modalIcon').className = "text-5xl mb-4 text-green-500";
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => modalContent.classList.replace('scale-95', 'scale-100'), 10);
+        }
+
+        function closeModal() {
+            modalContent.classList.replace('scale-100', 'scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+        }
+
+        // 보고서 제출 검증 및 서버 전송 로직
+        function submitReport() {
+            const grade = document.querySelector('input[name="grade"]:checked');
+            const classNum = document.getElementById('classNum').value;
+            const studentNum = document.getElementById('studentNum').value;
+            const studentName = document.getElementById('studentName').value.trim();
+            const quiz = document.querySelector('input[name="quiz"]:checked');
+            const reportText = document.getElementById('reportText').value.trim();
+
+            // 유효성 검사
+            if (!grade || !classNum || !studentNum || !studentName) {
+                showModal('error', '입력 누락', '인적사항(학년, 반, 번호, 이름)을 모두 입력해주세요.');
+                return;
+            }
+            if (!quiz) {
+                showModal('error', '문제 미풀이', '개념 확인 문제를 풀어주세요.');
+                return;
+            }
+            if (reportText.length < 20) {
+                showModal('error', '내용 부족', '탐구 보고서를 좀 더 상세하게(3문장 이상) 작성해주세요.');
+                return;
+            }
+
+            // 정답 체크 (정답 4번: 아데노신 수용체 차단 및 교감신경 활성화)
+            let quizScore = 0;
+            let scoreText = "";
+            if(quiz.value === "4") {
+                quizScore = 5;
+                scoreText = "정답입니다! (5점 획득)";
+            } else {
+                quizScore = 0;
+                scoreText = "아쉽게도 오답입니다. (정답은 ④번입니다)";
+            }
+
+            // 🌟 선생님이 배포하신 구글 앱스 스크립트 웹앱 URL 적용 완료 🌟
+            const scriptURL = 'https://script.google.com/macros/s/AKfycbwZJx9gbJsKoNdObRX4Y2_7spxtd_w6XRnW1tXCJJFbbBYvh7e0YRYlOZwCwhth-w3pJA/exec';
+
+            // 전송할 데이터 페이로드 생성
+            const payload = {
+                grade: grade.value,
+                classNum: classNum,
+                studentNum: studentNum,
+                studentName: studentName,
+                quizScore: quizScore,
+                reportText: reportText
+            };
+
+            // 버튼을 "제출 중" 상태로 변경하여 중복 클릭 방지
+            const submitBtn = document.getElementById('submitBtn');
+            const submitBtnText = document.getElementById('submitBtnText');
+            const submitIcon = document.getElementById('submitIcon');
+            
+            submitBtn.disabled = true;
+            submitBtn.classList.replace('bg-indigo-600', 'bg-gray-500');
+            submitBtn.classList.replace('hover:bg-indigo-700', 'hover:bg-gray-500');
+            submitBtnText.innerText = "데이터 전송 중...";
+            submitIcon.classList.add('animate-spin'); // 아이콘 빙글빙글 회전
+
+            // 구글 앱스 스크립트로 POST 전송 (CORS 프리플라이트 회피를 위해 text/plain 사용)
+            fetch(scriptURL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // 버튼 원상복구
+                submitBtn.disabled = false;
+                submitBtn.classList.replace('bg-gray-500', 'bg-indigo-600');
+                submitBtn.classList.replace('hover:bg-gray-500', 'hover:bg-indigo-700');
+                submitBtnText.innerText = "선생님께 보고서 제출하기";
+                submitIcon.classList.remove('animate-spin');
+
+                if(data.result === 'success') {
+                    showModal('success', '제출 완료!', `${studentName} 학생의 보고서가 정상적으로 선생님께 제출되었습니다.\n\n[객관식 채점 결과]\n${scoreText}`);
+                    document.getElementById('reportText').value = ""; // 성공 시 작성란 초기화
+                } else {
+                    showModal('error', '제출 실패', '데이터 저장 중 오류가 발생했습니다.\n' + data.message);
+                }
+            })
+            .catch(error => {
+                // 버튼 원상복구
+                submitBtn.disabled = false;
+                submitBtn.classList.replace('bg-gray-500', 'bg-indigo-600');
+                submitBtn.classList.replace('hover:bg-gray-500', 'hover:bg-indigo-700');
+                submitBtnText.innerText = "선생님께 보고서 제출하기";
+                submitIcon.classList.remove('animate-spin');
+                
+                showModal('error', '네트워크 오류', '인터넷 연결이 불안정하거나 서버에 접근할 수 없습니다.');
+            });
+        }
+    </script>
+</body>
+</html>
